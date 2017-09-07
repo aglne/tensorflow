@@ -23,9 +23,7 @@ limitations under the License.
 #include "tensorflow/compiler/aot/flags.h"
 #include "tensorflow/compiler/aot/tfcompile.pb.h"
 #include "tensorflow/compiler/aot/tfcompile_util.h"
-#include "tensorflow/compiler/xla/legacy_flags/compiler_functor_flags.h"
-#include "tensorflow/compiler/xla/legacy_flags/cpu_compiler_flags.h"
-#include "tensorflow/compiler/xla/legacy_flags/cpu_runtime_flags.h"
+#include "tensorflow/compiler/xla/legacy_flags/debug_options_flags.h"
 #include "tensorflow/compiler/xla/service/compiler.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/graph.pb.h"
@@ -95,12 +93,10 @@ Status Main(const MainFlags& flags) {
   GraphDef graph_def;
   TF_RETURN_IF_ERROR(ReadProtoFile("graph", flags.graph, &graph_def));
   std::unique_ptr<Graph> graph;
-  FunctionLibraryDefinition flib(OpRegistry::Global(), graph_def.library());
-  TF_RETURN_IF_ERROR(InitGraph(graph_def, config, flags, &flib, &graph));
+  TF_RETURN_IF_ERROR(InitGraph(graph_def, config, flags, &graph));
 
   CompileResult compile_result;
-  TF_RETURN_IF_ERROR(
-      CompileGraph(std::move(graph), flags, &flib, &compile_result));
+  TF_RETURN_IF_ERROR(CompileGraph(std::move(graph), flags, &compile_result));
 
   // Write output files.
   Env* env = Env::Default();
@@ -128,12 +124,11 @@ int main(int argc, char** argv) {
   flags.target_triple = "x86_64-pc-linux";
   flags.out_object = "out.o";
   flags.out_header = "out.h";
+  flags.entry_point = "entry";
 
   std::vector<tensorflow::Flag> flag_list;
   AppendMainFlags(&flag_list, &flags);
-  xla::legacy_flags::AppendCompilerFunctorFlags(&flag_list);
-  xla::legacy_flags::AppendCpuCompilerFlags(&flag_list);
-  xla::legacy_flags::AppendCpuRuntimeFlags(&flag_list);
+  xla::legacy_flags::AppendDebugOptionsFlags(&flag_list);
 
   tensorflow::string usage = tensorflow::tfcompile::kUsageHeader;
   usage += tensorflow::Flags::Usage(argv[0], flag_list);

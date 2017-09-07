@@ -36,7 +36,7 @@ cc_library(
         "//tensorflow/compiler/xla/client:client_library",
         "//tensorflow/compiler/xla/client:computation",
         "//tensorflow/compiler/xla/client:local_client",
-        "//tensorflow/compiler/xla/legacy_flags:service_flags",
+        "//tensorflow/compiler/xla/legacy_flags:debug_options_flags",
         "//tensorflow/compiler/xla/service",
         "//tensorflow/compiler/xla/service:session_proto",
         "//tensorflow/core:lib",
@@ -107,6 +107,19 @@ cc_binary(
 )
 
 cc_binary(
+    name = "replay_computation_hlo_evaluator",
+    deps = [
+        ":replay_computation_library",
+        "//tensorflow/compiler/plugin/executor:plugin_lib",
+        # TODO: This dependency is a workaround for linking error with clang.
+        # Without it, linker complains about missing symbols from
+        # 'xla_device_launch_op'. This dependency should be propagated from
+        # plugin_lib instead, but no targets other than this break without it.
+        "//tensorflow/compiler/jit",
+    ],
+)
+
+cc_binary(
     name = "show_literal",
     srcs = ["show_literal.cc"],
     deps = [
@@ -153,6 +166,7 @@ cc_binary(
         "//tensorflow/compiler/xla/client:computation",
         "//tensorflow/compiler/xla/client:local_client",
         "//tensorflow/compiler/xla/service",
+        "//tensorflow/compiler/xla/service:computation_tracker",
         "//tensorflow/compiler/xla/service:session_proto",
         "//tensorflow/core:lib",
     ],
@@ -176,49 +190,21 @@ cc_binary(
     ],
 )
 
-cc_library(
-    name = "hlo_tfgraph_builder",
-    srcs = ["hlo_tfgraph_builder.cc"],
-    hdrs = ["hlo_tfgraph_builder.h"],
-    deps = [
-        "//tensorflow/compiler/xla:literal_util",
-        "//tensorflow/compiler/xla:shape_util",
-        "//tensorflow/compiler/xla/service:hlo",
-        "//tensorflow/core:core_cpu",
-        "//tensorflow/core:framework",
-        "//tensorflow/core:lib",
-        "//tensorflow/core:protos_all_cc",
-    ],
-)
-
-cc_test(
-    name = "hlo_tfgraph_builder_test",
-    srcs = ["hlo_tfgraph_builder_test.cc"],
-    deps = [
-        ":hlo_tfgraph_builder",
-        "//tensorflow/compiler/xla/client:computation_builder",
-        "//tensorflow/compiler/xla/tests:hlo_test_base",
-        "//tensorflow/core:test_main",
-    ],
-)
-
 cc_binary(
     name = "dumped_computation_to_tf_graphdef",
     srcs = ["dumped_computation_to_tf_graphdef.cc"],
     deps = [
-        ":hlo_tfgraph_builder",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:types",
-        "//tensorflow/compiler/xla:xla_data_proto",
         "//tensorflow/compiler/xla/client",
         "//tensorflow/compiler/xla/client:client_library",
         "//tensorflow/compiler/xla/client:computation",
         "//tensorflow/compiler/xla/client:local_client",
+        "//tensorflow/compiler/xla/legacy_flags:debug_options_flags",
         "//tensorflow/compiler/xla/service",
         "//tensorflow/compiler/xla/service:hlo_graph_dumper",
         "//tensorflow/compiler/xla/service:session_proto",
         "//tensorflow/core:lib",
-        "//tensorflow/core:protos_all_cc",
     ],
 )
 

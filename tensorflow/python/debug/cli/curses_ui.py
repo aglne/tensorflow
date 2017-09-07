@@ -124,7 +124,7 @@ class ScrollBar(object):
       raise ValueError("Insufficient height for ScrollBar (%d)" %
                        (self._max_y - self._min_y + 1))
 
-  def _block_y(self):
+  def _block_y(self, screen_coord_sys=False):
     """Get the 0-based y coordinate of the scroll block.
 
     This y coordinate takes into account the presence of the UP and DN buttons
@@ -132,9 +132,13 @@ class ScrollBar(object):
     location, the return value will be 1; at the bottom location, the return
     value will be self._scroll_bar_height - 2.
 
+    Args:
+      screen_coord_sys: (`bool`) whether the return value will be in the
+        screen coordinate system.
+
     Returns:
       (int) 0-based y coordinate of the scroll block, in the ScrollBar
-        coordinate system, i.e., not the screen coordinate system. For example,
+        coordinate system by default. For example,
         when scroll position is at the top, this return value will be 1 (not 0,
         because of the presence of the UP button). When scroll position is at
         the bottom, this return value will be self._scroll_bar_height - 2
@@ -142,8 +146,10 @@ class ScrollBar(object):
         button).
     """
 
-    return int(float(self._scroll_position) / (self._output_num_rows - 1) *
-               (self._scroll_bar_height - 3)) + 1
+    rel_block_y = int(
+        float(self._scroll_position) / (self._output_num_rows - 1) *
+        (self._scroll_bar_height - 3)) + 1
+    return rel_block_y + self._min_y if screen_coord_sys else rel_block_y
 
   def layout(self):
     """Get the RichTextLines layout of the scroll bar.
@@ -192,9 +198,11 @@ class ScrollBar(object):
       return _SCROLL_UP_A_LINE
     elif mouse_y == self._max_y:
       return _SCROLL_DOWN_A_LINE
-    elif mouse_y > self._block_y() and mouse_y < self._max_y:
+    elif (mouse_y > self._block_y(screen_coord_sys=True) and
+          mouse_y < self._max_y):
       return _SCROLL_DOWN
-    elif mouse_y < self._block_y() and mouse_y > self._min_y:
+    elif (mouse_y < self._block_y(screen_coord_sys=True) and
+          mouse_y > self._min_y):
       return _SCROLL_UP
     else:
       return None
@@ -505,7 +513,19 @@ class CursesUI(base_ui.BaseUI):
   def get_help(self):
     return self._command_handler_registry.get_help()
 
-  def _screen_create_command_textbox(self, existing_command):
+  def _addstr(self, *args):
+    try:
+      self._stdscr.addstr(*args)
+    except curses.error:
+      pass
+
+  def _refresh_pad(self, pad, *args):
+    try:
+      pad.refresh(*args)
+    except curses.error:
+      pass
+
+  def _screen_create_command_textbox(self, existing_command=None):
     """Create command textbox on screen.
 
     Args:
@@ -514,8 +534,8 @@ class CursesUI(base_ui.BaseUI):
     """
 
     # Display the tfdbg prompt.
-    self._stdscr.addstr(self._max_y - self._command_textbox_height, 0,
-                        self.CLI_PROMPT, curses.A_BOLD)
+    self._addstr(self._max_y - self._command_textbox_height, 0,
+                 self.CLI_PROMPT, curses.A_BOLD)
     self._stdscr.refresh()
 
     self._command_window.clear()
@@ -702,7 +722,8 @@ class CursesUI(base_ui.BaseUI):
       # Empty command: take no action. Should not exit.
       return
 
-    screen_info = {"cols": self._max_x}
+    # Take into account scroll bar width.
+    screen_info = {"cols": self._max_x - 2}
     exit_token = None
     if self._command_handler_registry.is_registered(prefix):
       try:
@@ -839,6 +860,7 @@ class CursesUI(base_ui.BaseUI):
         else:
           command = self._fetch_hyperlink_command(mouse_x, mouse_y)
           if command:
+            self._screen_create_command_textbox()
             exit_token = self._dispatch_command(command)
             if exit_token is not None:
               raise debugger_cli_common.CommandLineExit(exit_token=exit_token)
@@ -898,13 +920,14 @@ class CursesUI(base_ui.BaseUI):
     """Automatically key in a command to the command Textbox.
 
     Args:
-      command: The command, as a string.
+      command: The command, as a string or None.
       erase_existing: (bool) whether existing text (if any) is to be erased
           first.
     """
     if erase_existing:
       self._erase_existing_command()
 
+    command = command or ""
     for c in command:
       self._command_textbox.do_command(ord(c))
 
@@ -937,7 +960,7 @@ class CursesUI(base_ui.BaseUI):
     color_pair = (self._default_color_pair if color is None else
                   self._color_pairs[color])
 
-    self._stdscr.addstr(row, 0, line, color_pair | attr)
+    self._addstr(row, 0, line, color_pair | attr)
     self._screen_refresh()
 
   def _screen_new_output_pad(self, rows, cols):
@@ -1067,6 +1090,9 @@ class CursesUI(base_ui.BaseUI):
         self._toast("Pattern not found", color=self._ERROR_TOAST_COLOR_PAIR)
     elif is_refresh:
       self._scroll_output(_SCROLL_REFRESH)
+    elif debugger_cli_common.INIT_SCROLL_POS_KEY in output.annotations:
+      line_index = output.annotations[debugger_cli_common.INIT_SCROLL_POS_KEY]
+      self._scroll_output(_SCROLL_TO_LINE_INDEX, line_index=line_index)
     else:
       self._output_pad_row = 0
       self._scroll_output(_SCROLL_HOME)
@@ -1221,23 +1247,22 @@ class CursesUI(base_ui.BaseUI):
   def _screen_scroll_output_pad(self, pad, viewport_top, viewport_left,
                                 screen_location_top, screen_location_left,
                                 screen_location_bottom, screen_location_right):
-    pad.refresh(viewport_top, viewport_left, screen_location_top,
-                screen_location_left, screen_location_bottom,
-                screen_location_right)
-
+    self._refresh_pad(pad, viewport_top, viewport_left, screen_location_top,
+                      screen_location_left, screen_location_bottom,
+                      screen_location_right)
     self._scroll_bar = ScrollBar(
         self._max_x - 2,
-        2,
+        3,
         self._max_x - 1,
-        self._output_num_rows,
+        self._output_num_rows + 1,
         self._output_pad_row,
         self._output_pad_height - self._output_pad_screen_height)
 
     (scroll_pad, _, _) = self._display_lines(
         self._scroll_bar.layout(), self._output_num_rows - 1)
-    scroll_pad.refresh(
-        0, 0, self._output_top_row + 1, self._max_x - 2,
-        self._output_num_rows + 1, self._max_x - 1)
+    self._refresh_pad(scroll_pad, 0, 0, self._output_top_row + 1,
+                      self._max_x - 2, self._output_num_rows + 1,
+                      self._max_x - 1)
 
   def _scroll_output(self, direction, line_index=None):
     """Scroll the output pad.
@@ -1318,15 +1343,14 @@ class CursesUI(base_ui.BaseUI):
 
   def _screen_render_nav_bar(self):
     if self._nav_bar_pad:
-      self._nav_bar_pad.refresh(0, 0, self._nav_bar_row, 0,
-                                self._output_pad_screen_location.top,
-                                self._max_x)
+      self._refresh_pad(self._nav_bar_pad, 0, 0, self._nav_bar_row, 0,
+                        self._output_pad_screen_location.top, self._max_x)
 
   def _screen_render_menu_pad(self):
     if self._main_menu_pad:
-      self._main_menu_pad.refresh(0, 0, self._output_pad_screen_location.top, 0,
-                                  self._output_pad_screen_location.top,
-                                  self._max_x)
+      self._refresh_pad(
+          self._main_menu_pad, 0, 0, self._output_pad_screen_location.top, 0,
+          self._output_pad_screen_location.top, self._max_x)
 
   def _compile_ui_status_summary(self):
     """Compile status summary about this Curses UI instance.

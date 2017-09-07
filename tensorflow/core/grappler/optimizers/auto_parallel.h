@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_GRAPPLER_OPTIMIZERS_AUTO_PARALLEL_H_
 
 #include "tensorflow/core/grappler/optimizers/graph_optimizer.h"
+#include "tensorflow/core/framework/variable.pb.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
@@ -25,7 +26,9 @@ namespace grappler {
 // Automatically parallelize a graph by splitting in the batch dimension.
 class AutoParallel : public GraphOptimizer {
  public:
-  AutoParallel(int num_replicas) : num_replicas_(num_replicas) {}
+  AutoParallel(int num_replicas) : num_replicas_(num_replicas) {
+    CHECK(num_replicas_ >= 2);
+  }
   ~AutoParallel() override {}
 
   string name() const override { return "autoparallel"; };
